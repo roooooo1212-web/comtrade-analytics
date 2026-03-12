@@ -1,0 +1,5 @@
+file,rows,mismatch_rows,mismatch_share_pct
+machinery_electronics_HS84_85_country_pairs_2020_2024.csv,33640,6639,19.74
+energy_fuels_HS27_country_pairs_2020_2024.csv,17291,2370,13.71
+ores_HS26_country_pairs_2020_2024.csv,7404,838,11.32
+cereals_HS10_country_pairs_2020_2024.csv,11597,1293,11.15
