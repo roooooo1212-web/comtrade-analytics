@@ -243,6 +243,90 @@ def bubble_pair_pct_vs_flow(df: pd.DataFrame):
     savefig("11_bubble_pair_mismatch_vs_flow.png")
 
 
+def abs_vs_pct_scatter(
+    data: pd.DataFrame,
+    *,
+    x_col: str,
+    y_col: str,
+    title: str,
+    xlabel: str,
+    ylabel: str,
+    filename: str,
+    sample_limit: int | None = None,
+):
+    work = data[[x_col, y_col]].copy()
+    work[x_col] = pd.to_numeric(work[x_col], errors="coerce")
+    work[y_col] = pd.to_numeric(work[y_col], errors="coerce")
+    work = work.dropna(subset=[x_col, y_col])
+    if work.empty:
+        return
+    work[x_col] = work[x_col].clip(lower=1.0)
+    work[y_col] = work[y_col].clip(lower=0.0)
+    if sample_limit and len(work) > sample_limit:
+        work = work.sample(sample_limit, random_state=42)
+    y_max = max(100.0, float(work[y_col].quantile(0.99)))
+    plt.figure(figsize=(9, 5.5))
+    plt.scatter(work[x_col], work[y_col], s=12, alpha=0.35)
+    plt.xscale("log")
+    plt.ylim(0, y_max * 1.05)
+    plt.title(title)
+    plt.xlabel(xlabel)
+    plt.ylabel(ylabel)
+    plt.grid(alpha=0.25)
+    savefig(filename)
+
+
+def abs_vs_pct_scatter_row_level(df: pd.DataFrame):
+    abs_vs_pct_scatter(
+        df,
+        x_col="abs_gap",
+        y_col="mismatch_pct",
+        title="Absolute Gap vs Mismatch % (Row Level)",
+        xlabel="abs_gap (USD, log scale)",
+        ylabel="mismatch_pct",
+        filename="13_abs_vs_pct_scatter_row_level.png",
+        sample_limit=50000,
+    )
+
+
+def abs_vs_pct_scatter_pair_level(df: pd.DataFrame):
+    g = (
+        df.groupby(["exporterISO", "importerISO"], as_index=False)
+        .agg(
+            total_abs_gap=("abs_gap", "sum"),
+            avg_mismatch_pct=("mismatch_pct", "mean"),
+        )
+    )
+    abs_vs_pct_scatter(
+        g,
+        x_col="total_abs_gap",
+        y_col="avg_mismatch_pct",
+        title="Absolute Gap vs Mismatch % (Pair Level)",
+        xlabel="total abs_gap (USD, log scale)",
+        ylabel="avg mismatch_pct",
+        filename="14_abs_vs_pct_scatter_pair_level.png",
+    )
+
+
+def abs_vs_pct_scatter_commodity_level(df: pd.DataFrame):
+    g = (
+        df.groupby("commodity", as_index=False)
+        .agg(
+            total_abs_gap=("abs_gap", "sum"),
+            avg_mismatch_pct=("mismatch_pct", "mean"),
+        )
+    )
+    abs_vs_pct_scatter(
+        g,
+        x_col="total_abs_gap",
+        y_col="avg_mismatch_pct",
+        title="Absolute Gap vs Mismatch % (Commodity Level)",
+        xlabel="total abs_gap (USD, log scale)",
+        ylabel="avg mismatch_pct",
+        filename="15_abs_vs_pct_scatter_commodity_level.png",
+    )
+
+
 def reverse_missing_share(df: pd.DataFrame):
     g = (
         df.groupby(["commodity", "year"], as_index=False)
@@ -296,6 +380,9 @@ def main():
     scatter_exp_vs_imp(df)
     bubble_pair_pct_vs_flow(df)
     reverse_missing_share(df)
+    abs_vs_pct_scatter_row_level(df)
+    abs_vs_pct_scatter_pair_level(df)
+    abs_vs_pct_scatter_commodity_level(df)
 
     print(f"Written graphs to: {OUT_DIR}")
     print("Files:")
