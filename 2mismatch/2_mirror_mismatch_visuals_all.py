@@ -2,8 +2,9 @@
 """
 2_mirror_mismatch_visuals_all.py
 
-Build all main graphs from mirror_mismatch_all.csv and save to:
-  2mismatch/mirror_mismatch_graphs_all/
+Build all main graphs from:
+  - mirror_mismatch_all.csv -> mirror_mismatch_graphs_all/
+  - mirror_mismatch_all_zero_inclusive.csv -> mirror_mismatch_graphs_all_zero_inclusive/
 """
 
 from __future__ import annotations
@@ -18,20 +19,22 @@ import matplotlib.pyplot as plt
 BASE_DIR = Path(__file__).resolve().parent
 INPUT_CSV = BASE_DIR / "mirror_mismatch_all.csv"
 OUT_DIR = BASE_DIR / "mirror_mismatch_graphs_all"
+INPUT_CSV_ZERO_INCLUSIVE = BASE_DIR / "mirror_mismatch_all_zero_inclusive.csv"
+OUT_DIR_ZERO_INCLUSIVE = BASE_DIR / "mirror_mismatch_graphs_all_zero_inclusive"
 
 
 def ensure_numeric(df: pd.DataFrame, col: str) -> pd.Series:
     return pd.to_numeric(df[col], errors="coerce").fillna(0.0)
 
 
-def savefig(name: str):
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
+def savefig(out_dir: Path, name: str):
+    out_dir.mkdir(parents=True, exist_ok=True)
     plt.tight_layout()
-    plt.savefig(OUT_DIR / name, dpi=170)
+    plt.savefig(out_dir / name, dpi=170)
     plt.close()
 
 
-def top_pairs_by_abs_gap(df: pd.DataFrame):
+def top_pairs_by_abs_gap(df: pd.DataFrame, out_dir: Path):
     g = (
         df.groupby(["exporterISO", "importerISO"], as_index=False)["abs_gap"]
         .sum()
@@ -45,10 +48,10 @@ def top_pairs_by_abs_gap(df: pd.DataFrame):
     plt.xlabel("Pair")
     plt.ylabel("abs_gap (USD)")
     plt.xticks(rotation=50, ha="right", fontsize=8)
-    savefig("01_top_pairs_abs_gap.png")
+    savefig(out_dir, "01_top_pairs_abs_gap.png")
 
 
-def top_pairs_by_mismatch_pct(df: pd.DataFrame):
+def top_pairs_by_mismatch_pct(df: pd.DataFrame, out_dir: Path):
     work = df.copy()
     work["pair_flow"] = np.maximum(work["exp_A_to_B"], work["imp_B_from_A"])
     work = work[work["pair_flow"] >= 1_000_000]
@@ -65,10 +68,10 @@ def top_pairs_by_mismatch_pct(df: pd.DataFrame):
     plt.xlabel("Pair")
     plt.ylabel("avg mismatch_pct")
     plt.xticks(rotation=50, ha="right", fontsize=8)
-    savefig("02_top_pairs_mismatch_pct.png")
+    savefig(out_dir, "02_top_pairs_mismatch_pct.png")
 
 
-def heatmap_exporter_importer(df: pd.DataFrame):
+def heatmap_exporter_importer(df: pd.DataFrame, out_dir: Path):
     g = (
         df.groupby(["exporterISO", "importerISO"], as_index=False)["abs_gap"]
         .sum()
@@ -87,10 +90,10 @@ def heatmap_exporter_importer(df: pd.DataFrame):
     plt.ylabel("Exporter")
     plt.xticks(np.arange(len(pivot.columns)), pivot.columns, rotation=90, fontsize=7)
     plt.yticks(np.arange(len(pivot.index)), pivot.index, fontsize=7)
-    savefig("03_heatmap_exporter_importer_abs_gap.png")
+    savefig(out_dir, "03_heatmap_exporter_importer_abs_gap.png")
 
 
-def year_trend_abs_gap(df: pd.DataFrame):
+def year_trend_abs_gap(df: pd.DataFrame, out_dir: Path):
     g = df.groupby("year", as_index=False)["abs_gap"].sum().sort_values("year")
     plt.figure(figsize=(8, 4))
     plt.plot(g["year"], g["abs_gap"], marker="o")
@@ -98,10 +101,10 @@ def year_trend_abs_gap(df: pd.DataFrame):
     plt.xlabel("year")
     plt.ylabel("total abs_gap (USD)")
     plt.grid(alpha=0.3)
-    savefig("04_year_trend_abs_gap.png")
+    savefig(out_dir, "04_year_trend_abs_gap.png")
 
 
-def year_trend_suspicious_count(df: pd.DataFrame):
+def year_trend_suspicious_count(df: pd.DataFrame, out_dir: Path):
     g = df.groupby("year", as_index=False).size().sort_values("year")
     plt.figure(figsize=(8, 4))
     plt.plot(g["year"], g["size"], marker="o")
@@ -109,10 +112,10 @@ def year_trend_suspicious_count(df: pd.DataFrame):
     plt.xlabel("year")
     plt.ylabel("count")
     plt.grid(alpha=0.3)
-    savefig("05_year_trend_suspicious_count.png")
+    savefig(out_dir, "05_year_trend_suspicious_count.png")
 
 
-def commodity_abs_gap(df: pd.DataFrame):
+def commodity_abs_gap(df: pd.DataFrame, out_dir: Path):
     g = df.groupby("commodity", as_index=False)["abs_gap"].sum().sort_values("abs_gap", ascending=False)
     plt.figure(figsize=(10, 4))
     plt.bar(g["commodity"], g["abs_gap"])
@@ -120,10 +123,10 @@ def commodity_abs_gap(df: pd.DataFrame):
     plt.xlabel("commodity")
     plt.ylabel("total abs_gap (USD)")
     plt.xticks(rotation=30, ha="right", fontsize=8)
-    savefig("06_commodity_total_abs_gap.png")
+    savefig(out_dir, "06_commodity_total_abs_gap.png")
 
 
-def commodity_suspicious_count(df: pd.DataFrame):
+def commodity_suspicious_count(df: pd.DataFrame, out_dir: Path):
     g = df.groupby("commodity", as_index=False).size().sort_values("size", ascending=False)
     plt.figure(figsize=(10, 4))
     plt.bar(g["commodity"], g["size"])
@@ -131,10 +134,10 @@ def commodity_suspicious_count(df: pd.DataFrame):
     plt.xlabel("commodity")
     plt.ylabel("count")
     plt.xticks(rotation=30, ha="right", fontsize=8)
-    savefig("07_commodity_suspicious_count.png")
+    savefig(out_dir, "07_commodity_suspicious_count.png")
 
 
-def severity_by_year_stacked(df: pd.DataFrame):
+def severity_by_year_stacked(df: pd.DataFrame, out_dir: Path):
     g = (
         df.groupby(["year", "severity"], as_index=False)
         .size()
@@ -153,13 +156,16 @@ def severity_by_year_stacked(df: pd.DataFrame):
     plt.xlabel("year")
     plt.ylabel("count")
     plt.legend()
-    savefig("08_severity_by_year_stacked.png")
+    savefig(out_dir, "08_severity_by_year_stacked.png")
 
 
-def ratio_distribution(df: pd.DataFrame):
+def ratio_distribution(df: pd.DataFrame, out_dir: Path, *, zero_inclusive: bool):
     ratios = pd.to_numeric(df["exp_to_imp_ratio"], errors="coerce")
     ratios = ratios.replace([np.inf, -np.inf], np.nan).dropna()
-    ratios = ratios[ratios > 0]
+    if zero_inclusive:
+        ratios = ratios[ratios >= 0]
+    else:
+        ratios = ratios[ratios > 0]
     if len(ratios) == 0:
         return
     focus_max = 10.0
@@ -175,7 +181,7 @@ def ratio_distribution(df: pd.DataFrame):
         plt.ylabel("frequency")
         plt.axvline(1.0, color="tab:red", linestyle="--", linewidth=1, label="ratio = 1")
         plt.legend()
-        savefig("09_ratio_distribution_focus_0_10.png")
+        savefig(out_dir, "09_ratio_distribution_focus_0_10.png")
     plt.figure(figsize=(9, 4))
     plt.hist(clipped, bins=80)
     plt.title(f"Distribution of exp_to_imp_ratio (<= p{int(clip_q * 100)})")
@@ -183,16 +189,18 @@ def ratio_distribution(df: pd.DataFrame):
     plt.ylabel("frequency")
     plt.axvline(1.0, color="tab:red", linestyle="--", linewidth=1, label="ratio = 1")
     plt.legend()
-    savefig("09_ratio_distribution.png")
-    plt.figure(figsize=(9, 4))
-    plt.hist(np.log10(ratios), bins=80)
-    plt.title("Distribution of exp_to_imp_ratio (log10 scale)")
-    plt.xlabel("log10(exp_to_imp_ratio)")
-    plt.ylabel("frequency")
-    savefig("09_ratio_distribution_log10.png")
+    savefig(out_dir, "09_ratio_distribution.png")
+    positive_ratios = ratios[ratios > 0]
+    if len(positive_ratios) > 0:
+        plt.figure(figsize=(9, 4))
+        plt.hist(np.log10(positive_ratios), bins=80)
+        plt.title("Distribution of exp_to_imp_ratio (log10 scale)")
+        plt.xlabel("log10(exp_to_imp_ratio)")
+        plt.ylabel("frequency")
+        savefig(out_dir, "09_ratio_distribution_log10.png")
 
 
-def scatter_exp_vs_imp(df: pd.DataFrame):
+def scatter_exp_vs_imp(df: pd.DataFrame, out_dir: Path):
     work = df.copy()
     work["exp_A_to_B"] = np.maximum(work["exp_A_to_B"], 1.0)
     work["imp_B_from_A"] = np.maximum(work["imp_B_from_A"], 1.0)
@@ -209,10 +217,10 @@ def scatter_exp_vs_imp(df: pd.DataFrame):
     plt.title("exp_A_to_B vs imp_B_from_A (log-log)")
     plt.xlabel("exp_A_to_B")
     plt.ylabel("imp_B_from_A")
-    savefig("10_scatter_exp_vs_imp_loglog.png")
+    savefig(out_dir, "10_scatter_exp_vs_imp_loglog.png")
 
 
-def bubble_pair_pct_vs_flow(df: pd.DataFrame):
+def bubble_pair_pct_vs_flow(df: pd.DataFrame, out_dir: Path):
     work = df.copy()
     work["pair"] = work["exporterISO"] + "->" + work["importerISO"]
     work["flow"] = np.maximum(work["exp_A_to_B"], work["imp_B_from_A"])
@@ -240,7 +248,7 @@ def bubble_pair_pct_vs_flow(df: pd.DataFrame):
     plt.title("Pair-Level Bubble: Avg Mismatch % vs Total Flow")
     plt.xlabel("total flow (log scale)")
     plt.ylabel("avg mismatch_pct")
-    savefig("11_bubble_pair_mismatch_vs_flow.png")
+    savefig(out_dir, "11_bubble_pair_mismatch_vs_flow.png")
 
 
 def abs_vs_pct_scatter(
@@ -251,6 +259,7 @@ def abs_vs_pct_scatter(
     title: str,
     xlabel: str,
     ylabel: str,
+    out_dir: Path,
     filename: str,
     sample_limit: int | None = None,
 ):
@@ -273,10 +282,10 @@ def abs_vs_pct_scatter(
     plt.xlabel(xlabel)
     plt.ylabel(ylabel)
     plt.grid(alpha=0.25)
-    savefig(filename)
+    savefig(out_dir, filename)
 
 
-def abs_vs_pct_scatter_row_level(df: pd.DataFrame):
+def abs_vs_pct_scatter_row_level(df: pd.DataFrame, out_dir: Path):
     abs_vs_pct_scatter(
         df,
         x_col="abs_gap",
@@ -284,12 +293,13 @@ def abs_vs_pct_scatter_row_level(df: pd.DataFrame):
         title="Absolute Gap vs Mismatch % (Row Level)",
         xlabel="abs_gap (USD, log scale)",
         ylabel="mismatch_pct",
+        out_dir=out_dir,
         filename="13_abs_vs_pct_scatter_row_level.png",
         sample_limit=50000,
     )
 
 
-def abs_vs_pct_scatter_pair_level(df: pd.DataFrame):
+def abs_vs_pct_scatter_pair_level(df: pd.DataFrame, out_dir: Path):
     g = (
         df.groupby(["exporterISO", "importerISO"], as_index=False)
         .agg(
@@ -304,11 +314,12 @@ def abs_vs_pct_scatter_pair_level(df: pd.DataFrame):
         title="Absolute Gap vs Mismatch % (Pair Level)",
         xlabel="total abs_gap (USD, log scale)",
         ylabel="avg mismatch_pct",
+        out_dir=out_dir,
         filename="14_abs_vs_pct_scatter_pair_level.png",
     )
 
 
-def abs_vs_pct_scatter_commodity_level(df: pd.DataFrame):
+def abs_vs_pct_scatter_commodity_level(df: pd.DataFrame, out_dir: Path):
     g = (
         df.groupby("commodity", as_index=False)
         .agg(
@@ -323,11 +334,12 @@ def abs_vs_pct_scatter_commodity_level(df: pd.DataFrame):
         title="Absolute Gap vs Mismatch % (Commodity Level)",
         xlabel="total abs_gap (USD, log scale)",
         ylabel="avg mismatch_pct",
+        out_dir=out_dir,
         filename="15_abs_vs_pct_scatter_commodity_level.png",
         )
 
 
-def reverse_missing_share(df: pd.DataFrame):
+def reverse_missing_share(df: pd.DataFrame, out_dir: Path):
     g = (
         df.groupby(["commodity", "year"], as_index=False)
         .agg(
@@ -347,17 +359,17 @@ def reverse_missing_share(df: pd.DataFrame):
     plt.ylabel("missing reverse row share (%)")
     plt.legend(fontsize=7)
     plt.grid(alpha=0.3)
-    savefig("12_missing_reverse_share_by_commodity_year.png")
+    savefig(out_dir, "12_missing_reverse_share_by_commodity_year.png")
 
 
-def main():
-    if not INPUT_CSV.exists():
-        print(f"Input file not found: {INPUT_CSV}")
+def run_variant(input_csv: Path, out_dir: Path, *, zero_inclusive: bool):
+    if not input_csv.exists():
+        print(f"Input file not found: {input_csv}")
         return
 
-    df = pd.read_csv(INPUT_CSV)
+    df = pd.read_csv(input_csv)
     if df.empty:
-        print("Input CSV is empty.")
+        print(f"Input CSV is empty: {input_csv}")
         return
 
     for col in ["abs_gap", "mismatch_pct", "exp_A_to_B", "imp_B_from_A", "year"]:
@@ -368,26 +380,31 @@ def main():
     else:
         df["reverse_row_present"] = True
 
-    top_pairs_by_abs_gap(df)
-    top_pairs_by_mismatch_pct(df)
-    heatmap_exporter_importer(df)
-    year_trend_abs_gap(df)
-    year_trend_suspicious_count(df)
-    commodity_abs_gap(df)
-    commodity_suspicious_count(df)
-    severity_by_year_stacked(df)
-    ratio_distribution(df)
-    scatter_exp_vs_imp(df)
-    bubble_pair_pct_vs_flow(df)
-    reverse_missing_share(df)
-    abs_vs_pct_scatter_row_level(df)
-    abs_vs_pct_scatter_pair_level(df)
-    abs_vs_pct_scatter_commodity_level(df)
+    top_pairs_by_abs_gap(df, out_dir)
+    top_pairs_by_mismatch_pct(df, out_dir)
+    heatmap_exporter_importer(df, out_dir)
+    year_trend_abs_gap(df, out_dir)
+    year_trend_suspicious_count(df, out_dir)
+    commodity_abs_gap(df, out_dir)
+    commodity_suspicious_count(df, out_dir)
+    severity_by_year_stacked(df, out_dir)
+    ratio_distribution(df, out_dir, zero_inclusive=zero_inclusive)
+    scatter_exp_vs_imp(df, out_dir)
+    bubble_pair_pct_vs_flow(df, out_dir)
+    reverse_missing_share(df, out_dir)
+    abs_vs_pct_scatter_row_level(df, out_dir)
+    abs_vs_pct_scatter_pair_level(df, out_dir)
+    abs_vs_pct_scatter_commodity_level(df, out_dir)
 
-    print(f"Written graphs to: {OUT_DIR}")
+    print(f"Written graphs to: {out_dir}")
     print("Files:")
-    for p in sorted(OUT_DIR.glob("*.png")):
+    for p in sorted(out_dir.glob("*.png")):
         print(f"- {p.name}")
+
+
+def main():
+    run_variant(INPUT_CSV, OUT_DIR, zero_inclusive=False)
+    run_variant(INPUT_CSV_ZERO_INCLUSIVE, OUT_DIR_ZERO_INCLUSIVE, zero_inclusive=True)
 
 
 if __name__ == "__main__":

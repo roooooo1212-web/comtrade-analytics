@@ -12,6 +12,7 @@ builds mismatch rows, flags suspicious records, and writes:
   - mirror_mismatch_all.csv
   - mirror_mismatch_suspicious.csv
   - mirror_mismatch_suspicious.xlsx (highlighted)
+  - zero-inclusive ratio variants with `_zero_inclusive` suffix
 """
 
 from __future__ import annotations
@@ -35,6 +36,10 @@ OUT_ALL = BASE_DIR / "mirror_mismatch_all.csv"
 OUT_SUSPICIOUS = BASE_DIR / "mirror_mismatch_suspicious.csv"
 OUT_XLSX = BASE_DIR / "mirror_mismatch_suspicious.xlsx"
 OUT_BY_SOURCE_DIR = BASE_DIR / "mirror_mismatch_by_source"
+OUT_ALL_ZERO_INCLUSIVE = BASE_DIR / "mirror_mismatch_all_zero_inclusive.csv"
+OUT_SUSPICIOUS_ZERO_INCLUSIVE = BASE_DIR / "mirror_mismatch_suspicious_zero_inclusive.csv"
+OUT_XLSX_ZERO_INCLUSIVE = BASE_DIR / "mirror_mismatch_suspicious_zero_inclusive.xlsx"
+OUT_BY_SOURCE_ZERO_INCLUSIVE_DIR = BASE_DIR / "mirror_mismatch_by_source_zero_inclusive"
 
 
 def parse_args() -> argparse.Namespace:
@@ -160,6 +165,15 @@ def get_country_name(iso: str, exp_map: dict[str, str], imp_map: dict[str, str])
     return exp_map.get(iso) or imp_map.get(iso) or iso
 
 
+def compute_ratio_metrics(export_value: float, mirrored_import_value: float) -> tuple[float | None, float | None, str]:
+    if mirrored_import_value > 0:
+        ratio = export_value / mirrored_import_value
+        return ratio, ratio, "finite"
+    if export_value == 0:
+        return None, 0.0, "zero_over_zero_or_missing"
+    return None, float("inf"), "positive_over_zero_or_missing"
+
+
 def classify_row(
     export_value: float,
     mirrored_import_value: float,
@@ -250,7 +264,10 @@ def compare_file(path: Path, args: argparse.Namespace, excluded_codes: set[str])
             abs_gap = abs(exp_value - mirrored_imp_value)
             denom = max(exp_value, mirrored_imp_value, 1.0)
             pct_gap = abs_gap / denom * 100.0
-            ratio = exp_value / mirrored_imp_value if mirrored_imp_value > 0 else None
+            ratio, ratio_zero_inclusive, ratio_case = compute_ratio_metrics(
+                exp_value,
+                mirrored_imp_value,
+            )
 
             is_suspicious, reason, severity = classify_row(
                 exp_value,
@@ -276,6 +293,8 @@ def compare_file(path: Path, args: argparse.Namespace, excluded_codes: set[str])
                     "abs_gap": abs_gap,
                     "mismatch_pct": pct_gap,
                     "exp_to_imp_ratio": ratio,
+                    "exp_to_imp_ratio_zero_inclusive": ratio_zero_inclusive,
+                    "exp_to_imp_ratio_case": ratio_case,
                     "reverse_row_present": reverse_present,
                     "is_suspicious": is_suspicious,
                     "reason": reason,
@@ -295,7 +314,13 @@ def compare_file(path: Path, args: argparse.Namespace, excluded_codes: set[str])
 
 
 def write_highlighted_excel(df_suspicious: pd.DataFrame, out_path: Path):
-    workbook = xlsxwriter.Workbook(str(out_path), {"constant_memory": True})
+    workbook = xlsxwriter.Workbook(
+        str(out_path),
+        {
+            "constant_memory": True,
+            "nan_inf_to_errors": True,
+        },
+    )
     worksheet = workbook.add_worksheet("suspicious")
 
     high_fmt = workbook.add_format({"bg_color": "#FFC7CE", "font_color": "#9C0006"})
@@ -342,6 +367,13 @@ def safe_stem(filename: str) -> str:
     return re.sub(r"[^A-Za-z0-9._-]+", "_", stem)
 
 
+def build_zero_inclusive_variant(df: pd.DataFrame) -> pd.DataFrame:
+    variant = df.copy()
+    if "exp_to_imp_ratio_zero_inclusive" in variant.columns:
+        variant["exp_to_imp_ratio"] = variant["exp_to_imp_ratio_zero_inclusive"]
+    return variant
+
+
 def main():
     args = parse_args()
     data_dir = detect_data_dir()
@@ -363,55 +395,91 @@ def main():
         by=["is_suspicious", "severity", "abs_gap", "mismatch_pct"],
         ascending=[False, True, False, False],
     )
+    all_df_zero_inclusive = build_zero_inclusive_variant(all_df)
 
     suspicious_df = all_df[all_df["is_suspicious"]].copy()
+    suspicious_df_zero_inclusive = all_df_zero_inclusive[all_df_zero_inclusive["is_suspicious"]].copy()
 
     all_df.to_csv(OUT_ALL, index=False)
     suspicious_df.to_csv(OUT_SUSPICIOUS, index=False)
+    all_df_zero_inclusive.to_csv(OUT_ALL_ZERO_INCLUSIVE, index=False)
+    suspicious_df_zero_inclusive.to_csv(OUT_SUSPICIOUS_ZERO_INCLUSIVE, index=False)
     xlsx_df = suspicious_df.sort_values(by=["abs_gap", "mismatch_pct"], ascending=[False, False]).copy()
+    xlsx_df_zero_inclusive = suspicious_df_zero_inclusive.sort_values(
+        by=["abs_gap", "mismatch_pct"],
+        ascending=[False, False],
+    ).copy()
     xlsx_limited = False
     if args.xlsx_max_rows > 0 and len(xlsx_df) > args.xlsx_max_rows:
         xlsx_df = xlsx_df.head(args.xlsx_max_rows).copy()
+        xlsx_df_zero_inclusive = xlsx_df_zero_inclusive.head(args.xlsx_max_rows).copy()
         xlsx_limited = True
 
     if not args.no_xlsx:
         write_highlighted_excel(xlsx_df, OUT_XLSX)
+        write_highlighted_excel(xlsx_df_zero_inclusive, OUT_XLSX_ZERO_INCLUSIVE)
 
     OUT_BY_SOURCE_DIR.mkdir(parents=True, exist_ok=True)
+    OUT_BY_SOURCE_ZERO_INCLUSIVE_DIR.mkdir(parents=True, exist_ok=True)
     written_source_files = 0
     for source_file, src_df in all_df.groupby("source_file", sort=True):
         src_all = src_df.sort_values(
             by=["is_suspicious", "severity", "abs_gap", "mismatch_pct"],
             ascending=[False, True, False, False],
         ).copy()
+        src_all_zero_inclusive = build_zero_inclusive_variant(src_all)
         src_suspicious = src_all[src_all["is_suspicious"]].copy()
+        src_suspicious_zero_inclusive = src_all_zero_inclusive[src_all_zero_inclusive["is_suspicious"]].copy()
         src_key = safe_stem(source_file)
 
         src_all_path = OUT_BY_SOURCE_DIR / f"{src_key}_mirror_mismatch_all.csv"
         src_suspicious_path = OUT_BY_SOURCE_DIR / f"{src_key}_mirror_mismatch_suspicious.csv"
+        src_all_zero_inclusive_path = (
+            OUT_BY_SOURCE_ZERO_INCLUSIVE_DIR / f"{src_key}_mirror_mismatch_all_zero_inclusive.csv"
+        )
+        src_suspicious_zero_inclusive_path = (
+            OUT_BY_SOURCE_ZERO_INCLUSIVE_DIR / f"{src_key}_mirror_mismatch_suspicious_zero_inclusive.csv"
+        )
         src_all.to_csv(src_all_path, index=False)
         src_suspicious.to_csv(src_suspicious_path, index=False)
+        src_all_zero_inclusive.to_csv(src_all_zero_inclusive_path, index=False)
+        src_suspicious_zero_inclusive.to_csv(src_suspicious_zero_inclusive_path, index=False)
 
         if not args.no_xlsx:
             src_xlsx = src_suspicious.sort_values(
                 by=["abs_gap", "mismatch_pct"], ascending=[False, False]
             ).copy()
+            src_xlsx_zero_inclusive = src_suspicious_zero_inclusive.sort_values(
+                by=["abs_gap", "mismatch_pct"], ascending=[False, False]
+            ).copy()
             if args.xlsx_max_rows > 0 and len(src_xlsx) > args.xlsx_max_rows:
                 src_xlsx = src_xlsx.head(args.xlsx_max_rows).copy()
+                src_xlsx_zero_inclusive = src_xlsx_zero_inclusive.head(args.xlsx_max_rows).copy()
             src_xlsx_path = OUT_BY_SOURCE_DIR / f"{src_key}_mirror_mismatch_suspicious.xlsx"
+            src_xlsx_zero_inclusive_path = (
+                OUT_BY_SOURCE_ZERO_INCLUSIVE_DIR / f"{src_key}_mirror_mismatch_suspicious_zero_inclusive.xlsx"
+            )
             write_highlighted_excel(src_xlsx, src_xlsx_path)
+            write_highlighted_excel(src_xlsx_zero_inclusive, src_xlsx_zero_inclusive_path)
         written_source_files += 1
 
     print("Written files:")
     print(f"- {OUT_ALL}")
     print(f"- {OUT_SUSPICIOUS}")
+    print(f"- {OUT_ALL_ZERO_INCLUSIVE}")
+    print(f"- {OUT_SUSPICIOUS_ZERO_INCLUSIVE}")
     if args.no_xlsx:
         print("- Excel output skipped (--no-xlsx)")
     else:
         print(f"- {OUT_XLSX}")
+        print(f"- {OUT_XLSX_ZERO_INCLUSIVE}")
     print(f"Total rows checked: {len(all_df)}")
     print(f"Suspicious rows: {len(suspicious_df)}")
     print(f"Per-source outputs folder: {OUT_BY_SOURCE_DIR} ({written_source_files} sources)")
+    print(
+        f"Per-source zero-inclusive outputs folder: "
+        f"{OUT_BY_SOURCE_ZERO_INCLUSIVE_DIR} ({written_source_files} sources)"
+    )
     if xlsx_limited and not args.no_xlsx:
         print(f"Excel rows written: {len(xlsx_df)} (limited by --xlsx-max-rows)")
     if excluded_codes:
