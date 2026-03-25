@@ -285,6 +285,96 @@ def abs_vs_pct_scatter(
     savefig(out_dir, filename)
 
 
+def build_ratio_scatter_data(
+    data: pd.DataFrame,
+    *,
+    export_col: str,
+    import_col: str,
+    abs_gap_col: str,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    work = data[[export_col, import_col, abs_gap_col]].copy()
+    work[export_col] = pd.to_numeric(work[export_col], errors="coerce")
+    work[import_col] = pd.to_numeric(work[import_col], errors="coerce")
+    work[abs_gap_col] = pd.to_numeric(work[abs_gap_col], errors="coerce")
+    work = work.dropna(subset=[export_col, import_col, abs_gap_col])
+    if work.empty:
+        return pd.DataFrame(columns=["x_value", "relative_ratio"]), pd.DataFrame(columns=["x_value", "zero_case_y"])
+
+    max_side = np.maximum(work[export_col], work[import_col])
+    min_side = np.minimum(work[export_col], work[import_col])
+
+    finite_mask = min_side > 0
+    finite = work.loc[finite_mask, [abs_gap_col]].copy()
+    finite["x_value"] = finite[abs_gap_col].clip(lower=1.0)
+    finite["relative_ratio"] = max_side[finite_mask] / min_side[finite_mask]
+
+    zero_mask = (min_side == 0) & (max_side > 0)
+    zero_cases = work.loc[zero_mask, [abs_gap_col]].copy()
+    zero_cases["x_value"] = zero_cases[abs_gap_col].clip(lower=1.0)
+    zero_cases["zero_case_y"] = 1.0
+
+    return finite[["x_value", "relative_ratio"]], zero_cases[["x_value", "zero_case_y"]]
+
+
+def ratio_scatter(
+    finite_data: pd.DataFrame,
+    *,
+    y_col: str,
+    title: str,
+    xlabel: str,
+    ylabel: str,
+    out_dir: Path,
+    filename: str,
+    sample_limit: int | None = None,
+):
+    work = finite_data[["x_value", y_col]].copy()
+    work["x_value"] = pd.to_numeric(work["x_value"], errors="coerce")
+    work[y_col] = pd.to_numeric(work[y_col], errors="coerce")
+    work = work.replace([np.inf, -np.inf], np.nan).dropna(subset=["x_value", y_col])
+    if work.empty:
+        return
+    if sample_limit and len(work) > sample_limit:
+        work = work.sample(sample_limit, random_state=42)
+    y_max = max(2.0, float(work[y_col].quantile(0.99)))
+    plt.figure(figsize=(9, 5.5))
+    plt.scatter(work["x_value"], work[y_col], s=12, alpha=0.35)
+    plt.xscale("log")
+    plt.ylim(1.0, y_max * 1.05)
+    plt.title(title)
+    plt.xlabel(xlabel)
+    plt.ylabel(ylabel)
+    plt.grid(alpha=0.25)
+    savefig(out_dir, filename)
+
+
+def zero_case_scatter(
+    zero_data: pd.DataFrame,
+    *,
+    title: str,
+    xlabel: str,
+    out_dir: Path,
+    filename: str,
+    sample_limit: int | None = None,
+):
+    work = zero_data[["x_value", "zero_case_y"]].copy()
+    work["x_value"] = pd.to_numeric(work["x_value"], errors="coerce")
+    work = work.dropna(subset=["x_value"])
+    if work.empty:
+        return
+    if sample_limit and len(work) > sample_limit:
+        work = work.sample(sample_limit, random_state=42)
+    plt.figure(figsize=(9, 2.8))
+    plt.scatter(work["x_value"], work["zero_case_y"], s=14, alpha=0.45, color="tab:red")
+    plt.xscale("log")
+    plt.ylim(0.8, 1.2)
+    plt.yticks([1.0], ["one side is zero"])
+    plt.title(title)
+    plt.xlabel(xlabel)
+    plt.ylabel("case")
+    plt.grid(alpha=0.25, axis="x")
+    savefig(out_dir, filename)
+
+
 def abs_vs_pct_scatter_row_level(df: pd.DataFrame, out_dir: Path):
     abs_vs_pct_scatter(
         df,
@@ -295,6 +385,33 @@ def abs_vs_pct_scatter_row_level(df: pd.DataFrame, out_dir: Path):
         ylabel="mismatch_pct",
         out_dir=out_dir,
         filename="13_abs_vs_pct_scatter_row_level.png",
+        sample_limit=50000,
+    )
+
+
+def abs_vs_ratio_scatter_row_level(df: pd.DataFrame, out_dir: Path):
+    finite, zero_cases = build_ratio_scatter_data(
+        df,
+        export_col="exp_A_to_B",
+        import_col="imp_B_from_A",
+        abs_gap_col="abs_gap",
+    )
+    ratio_scatter(
+        finite,
+        y_col="relative_ratio",
+        title="Absolute Gap vs max(exp, imp)/min(exp, imp) (Row Level)",
+        xlabel="abs_gap (USD, log scale)",
+        ylabel="max(exp, imp) / min(exp, imp)",
+        out_dir=out_dir,
+        filename="16_abs_vs_ratio_scatter_row_level.png",
+        sample_limit=50000,
+    )
+    zero_case_scatter(
+        zero_cases,
+        title="Absolute Gap for Zero-Side Cases (Row Level)",
+        xlabel="abs_gap (USD, log scale)",
+        out_dir=out_dir,
+        filename="18_abs_vs_ratio_zero_cases_row_level.png",
         sample_limit=50000,
     )
 
@@ -316,6 +433,39 @@ def abs_vs_pct_scatter_pair_level(df: pd.DataFrame, out_dir: Path):
         ylabel="avg mismatch_pct",
         out_dir=out_dir,
         filename="14_abs_vs_pct_scatter_pair_level.png",
+    )
+
+
+def abs_vs_ratio_scatter_pair_level(df: pd.DataFrame, out_dir: Path):
+    g = (
+        df.groupby(["exporterISO", "importerISO"], as_index=False)
+        .agg(
+            total_export=("exp_A_to_B", "sum"),
+            total_import=("imp_B_from_A", "sum"),
+        )
+    )
+    g["total_abs_gap"] = (g["total_export"] - g["total_import"]).abs()
+    finite, zero_cases = build_ratio_scatter_data(
+        g,
+        export_col="total_export",
+        import_col="total_import",
+        abs_gap_col="total_abs_gap",
+    )
+    ratio_scatter(
+        finite,
+        y_col="relative_ratio",
+        title="Absolute Gap vs max(total export, total import)/min(total export, total import) (Pair Level)",
+        xlabel="total abs_gap (USD, log scale)",
+        ylabel="max(total export, total import) / min(total export, total import)",
+        out_dir=out_dir,
+        filename="17_abs_vs_ratio_scatter_pair_level.png",
+    )
+    zero_case_scatter(
+        zero_cases,
+        title="Absolute Gap for Zero-Side Cases (Pair Level)",
+        xlabel="total abs_gap (USD, log scale)",
+        out_dir=out_dir,
+        filename="19_abs_vs_ratio_zero_cases_pair_level.png",
     )
 
 
@@ -395,6 +545,8 @@ def run_variant(input_csv: Path, out_dir: Path, *, zero_inclusive: bool):
     abs_vs_pct_scatter_row_level(df, out_dir)
     abs_vs_pct_scatter_pair_level(df, out_dir)
     abs_vs_pct_scatter_commodity_level(df, out_dir)
+    abs_vs_ratio_scatter_row_level(df, out_dir)
+    abs_vs_ratio_scatter_pair_level(df, out_dir)
 
     print(f"Written graphs to: {out_dir}")
     print("Files:")
