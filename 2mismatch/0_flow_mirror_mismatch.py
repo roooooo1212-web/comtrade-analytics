@@ -174,6 +174,17 @@ def compute_ratio_metrics(export_value: float, mirrored_import_value: float) -> 
     return None, float("inf"), "positive_over_zero_or_missing"
 
 
+def compute_abs_vs_relative_point(export_value: float, mirrored_import_value: float, abs_gap: float) -> tuple[float, float | None]:
+    x_value = abs_gap
+    max_side = max(export_value, mirrored_import_value)
+    min_side = min(export_value, mirrored_import_value)
+    if min_side > 0:
+        return x_value, max_side / min_side
+    if max_side > 0:
+        return x_value, 1.0
+    return x_value, None
+
+
 def classify_row(
     export_value: float,
     mirrored_import_value: float,
@@ -268,6 +279,11 @@ def compare_file(path: Path, args: argparse.Namespace, excluded_codes: set[str])
                 exp_value,
                 mirrored_imp_value,
             )
+            abs_vs_relative_x, abs_vs_relative_y = compute_abs_vs_relative_point(
+                exp_value,
+                mirrored_imp_value,
+                abs_gap,
+            )
 
             is_suspicious, reason, severity = classify_row(
                 exp_value,
@@ -291,6 +307,8 @@ def compare_file(path: Path, args: argparse.Namespace, excluded_codes: set[str])
                     "exp_A_to_B": exp_value,
                     "imp_B_from_A": mirrored_imp_value,
                     "abs_gap": abs_gap,
+                    "abs_vs_relative_x": abs_vs_relative_x,
+                    "abs_vs_relative_y": abs_vs_relative_y,
                     "mismatch_pct": pct_gap,
                     "exp_to_imp_ratio": ratio,
                     "exp_to_imp_ratio_zero_inclusive": ratio_zero_inclusive,
